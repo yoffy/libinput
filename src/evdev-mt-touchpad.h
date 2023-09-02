@@ -441,6 +441,7 @@ struct tp_dispatch {
 		int32_t right_edge;		/* in device coordinates */
 		int32_t left_edge;		/* in device coordinates */
 		int32_t upper_edge;		/* in device coordinates */
+		int32_t lower_edge;		/* in device coordinates */
 
 		bool trackpoint_active;
 		struct libinput_event_listener trackpoint_listener;
