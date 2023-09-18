@@ -363,6 +363,9 @@ struct tp_dispatch {
 		struct device_float_coords center;
 		struct libinput_timer hold_timer;
 		bool hold_enabled;
+		struct libinput_timer three_finger_drag_timer;
+		bool three_finger_drag_enabled;
+		bool three_finger_dragging;
 	} gesture;
 
 	struct {

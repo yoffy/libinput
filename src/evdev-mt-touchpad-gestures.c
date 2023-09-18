@@ -33,6 +33,7 @@
 #define DEFAULT_GESTURE_SWITCH_TIMEOUT ms2us(100)
 #define DEFAULT_GESTURE_SWIPE_TIMEOUT ms2us(150)
 #define DEFAULT_GESTURE_PINCH_TIMEOUT ms2us(300)
+#define DEFAULT_GESTURE_THREE_FINGER_DRAG_TIMEOUT ms2us(500)
 
 #define HOLD_AND_MOTION_THRESHOLD 0.5 /* mm */
 #define PINCH_DISAMBIGUATION_MOVE_THRESHOLD 1.5 /* mm */
@@ -178,8 +179,13 @@ tp_gesture_start(struct tp_dispatch *tp, uint64_t time)
 		break;
 	case GESTURE_STATE_SWIPE:
 		if (tp->gesture.finger_count == 3) {
-			pointer_notify_button(&tp->device->base, time,
-						BTN_LEFT, LIBINPUT_BUTTON_STATE_PRESSED);
+			if (tp->gesture.three_finger_dragging) {
+				libinput_timer_cancel(&tp->gesture.three_finger_drag_timer);
+			} else {
+				pointer_notify_button(&tp->device->base, time,
+							BTN_LEFT, LIBINPUT_BUTTON_STATE_PRESSED);
+				tp->gesture.three_finger_dragging = true;
+			}
 			break;
 		}
 		gesture_notify_swipe(&tp->device->base, time,
@@ -560,6 +566,22 @@ tp_gesture_set_hold_timer(struct tp_dispatch *tp, uint64_t time)
 }
 
 static void
+tp_gesture_set_three_finger_drag_timer(struct tp_dispatch *tp, uint64_t time)
+{
+	uint64_t timeout;
+
+	if (!tp->gesture.three_finger_drag_enabled) {
+		return;
+	}
+
+	libinput_timer_cancel(&tp->gesture.three_finger_drag_timer);
+
+	timeout = DEFAULT_GESTURE_THREE_FINGER_DRAG_TIMEOUT;
+
+	libinput_timer_set(&tp->gesture.three_finger_drag_timer, time + timeout);
+}
+
+static void
 tp_gesture_handle_event_on_state_none(struct tp_dispatch *tp,
 				      enum gesture_event event,
 				      uint64_t time)
@@ -853,6 +875,19 @@ tp_gesture_hold_timeout(uint64_t now, void *data)
 		return;
 
 	tp_gesture_handle_event(tp, GESTURE_EVENT_HOLD_TIMEOUT, now);
+}
+
+static void
+tp_gesture_three_finger_drag_timeout(uint64_t now, void *data)
+{
+	struct tp_dispatch *tp = data;
+
+	if (tp->gesture.state == GESTURE_STATE_HOLD)
+		return;
+
+	tp->gesture.three_finger_dragging = false;
+	pointer_notify_button(&tp->device->base, now,
+				BTN_LEFT, LIBINPUT_BUTTON_STATE_RELEASED);
 }
 
 void
@@ -1389,8 +1424,7 @@ tp_gesture_end(struct tp_dispatch *tp, uint64_t time, bool cancelled)
 		break;
 	case GESTURE_STATE_SWIPE:
 		if (tp->gesture.finger_count == 3) {
-			pointer_notify_button(&tp->device->base, time,
-						BTN_LEFT, LIBINPUT_BUTTON_STATE_RELEASED);
+			tp_gesture_set_three_finger_drag_timer(tp, time);
 			break;
 		}
 		gesture_notify_swipe_end(&tp->device->base,
@@ -1538,6 +1572,8 @@ tp_init_gesture(struct tp_dispatch *tp)
 
 	tp->gesture.state = GESTURE_STATE_NONE;
 	tp->gesture.hold_enabled = tp_gesture_are_gestures_enabled(tp);
+	tp->gesture.three_finger_drag_enabled = true;
+	tp->gesture.three_finger_dragging = false;
 
 	snprintf(timer_name,
 		 sizeof(timer_name),
@@ -1556,6 +1592,15 @@ tp_init_gesture(struct tp_dispatch *tp)
 			    tp_libinput_context(tp),
 			    timer_name,
 			    tp_gesture_hold_timeout, tp);
+
+	snprintf(timer_name,
+		 sizeof(timer_name),
+		 "%s 3-finger drag",
+		 evdev_device_get_sysname(tp->device));
+	libinput_timer_init(&tp->gesture.three_finger_drag_timer,
+			    tp_libinput_context(tp),
+			    timer_name,
+			    tp_gesture_three_finger_drag_timeout, tp);
 }
 
 void
@@ -1563,4 +1608,5 @@ tp_remove_gesture(struct tp_dispatch *tp)
 {
 	libinput_timer_cancel(&tp->gesture.finger_count_switch_timer);
 	libinput_timer_cancel(&tp->gesture.hold_timer);
+	libinput_timer_cancel(&tp->gesture.three_finger_drag_timer);
 }
