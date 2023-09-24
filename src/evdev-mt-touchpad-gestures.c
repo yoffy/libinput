@@ -149,6 +149,14 @@ tp_get_average_touches_delta(struct tp_dispatch *tp)
 }
 
 static void
+tp_gesture_post_three_finger_drag_end(uint64_t now, struct tp_dispatch *tp)
+{
+	tp->gesture.three_finger_dragging = false;
+	pointer_notify_button(&tp->device->base, now,
+				BTN_LEFT, LIBINPUT_BUTTON_STATE_RELEASED);
+}
+
+static void
 tp_gesture_start(struct tp_dispatch *tp, uint64_t time)
 {
 	const struct normalized_coords zero = { 0.0, 0.0 };
@@ -165,6 +173,11 @@ tp_gesture_start(struct tp_dispatch *tp, uint64_t time)
 		break;
 	case GESTURE_STATE_HOLD:
 	case GESTURE_STATE_HOLD_AND_MOTION:
+		if (tp->gesture.three_finger_dragging && tp->gesture.finger_count != 3) {
+			libinput_timer_cancel(&tp->gesture.three_finger_drag_timer);
+			tp_gesture_post_three_finger_drag_end(time, tp);
+			break;
+		}
 		gesture_notify_hold(&tp->device->base, time,
 				    tp->gesture.finger_count);
 		break;
@@ -885,9 +898,7 @@ tp_gesture_three_finger_drag_timeout(uint64_t now, void *data)
 	if (tp->gesture.state == GESTURE_STATE_HOLD)
 		return;
 
-	tp->gesture.three_finger_dragging = false;
-	pointer_notify_button(&tp->device->base, now,
-				BTN_LEFT, LIBINPUT_BUTTON_STATE_RELEASED);
+	tp_gesture_post_three_finger_drag_end(now, tp);
 }
 
 void
