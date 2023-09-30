@@ -3377,10 +3377,10 @@ tp_init_palmdetect(struct tp_dispatch *tp,
 	if (!tp_is_tablet(device))
 		tp->palm.monitor_trackpoint = true;
 
-	if (libevdev_has_event_code(device->evdev,
-				    EV_ABS,
-				    ABS_MT_TOOL_TYPE))
-		tp->palm.use_mt_tool = true;
+	// if (libevdev_has_event_code(device->evdev,
+	// 			    EV_ABS,
+	// 			    ABS_MT_TOOL_TYPE))
+	// 	tp->palm.use_mt_tool = true;
 
 	if (!tp_is_tablet(device))
 		tp_init_palmdetect_edge(tp, device);
