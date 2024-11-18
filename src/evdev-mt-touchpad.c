@@ -861,7 +861,8 @@ tp_palm_was_in_side_edge(const struct tp_dispatch *tp, const struct tp_touch *t)
 static inline bool
 tp_palm_was_in_top_edge(const struct tp_dispatch *tp, const struct tp_touch *t)
 {
-	return t->palm.first.y < tp->palm.upper_edge;
+	return t->palm.first.y < tp->palm.upper_edge ||
+	       t->palm.first.y > tp->palm.lower_edge;
 }
 
 static inline bool
@@ -874,7 +875,8 @@ tp_palm_in_side_edge(const struct tp_dispatch *tp, const struct tp_touch *t)
 static inline bool
 tp_palm_in_top_edge(const struct tp_dispatch *tp, const struct tp_touch *t)
 {
-	return t->point.y < tp->palm.upper_edge;
+	return t->point.y < tp->palm.upper_edge ||
+	       t->point.y > tp->palm.lower_edge;
 }
 
 static inline bool
@@ -1057,22 +1059,6 @@ tp_palm_detect_edge(struct tp_dispatch *tp,
 		    uint64_t time)
 {
 	if (t->palm.state == PALM_EDGE) {
-		if (tp_palm_detect_multifinger(tp, t, time)) {
-			t->palm.state = PALM_NONE;
-			evdev_log_debug(tp->device,
-				  "palm: touch %d released, multiple fingers\n",
-				  t->index);
-
-		/* If labelled a touch as palm, we unlabel as palm when
-		   we move out of the palm edge zone within the timeout, provided
-		   the direction is within 45 degrees of the horizontal.
-		 */
-		} else if (tp_palm_detect_move_out_of_edge(tp, t, time)) {
-			t->palm.state = PALM_NONE;
-			evdev_log_debug(tp->device,
-				  "palm: touch %d released, out of edge zone\n",
-				  t->index);
-		}
 		return false;
 	}
 
@@ -3355,27 +3341,33 @@ tp_init_palmdetect_edge(struct tp_dispatch *tp,
 	if (evdev_device_has_model_quirk(device, QUIRK_MODEL_APPLE_TOUCHPAD))
 		return;
 
-	evdev_device_get_size(device, &width, &height);
-
-	/* Enable edge palm detection on touchpads >= 70 mm. Anything
-	   smaller probably won't need it, until we find out it does */
-	if (width < 70.0)
+	if (evdev_device_get_size(device, &width, &height) < 0) {
 		return;
+	}
 
-	/* palm edges are 8% of the width on each side */
-	mm.x = min(8, width * 0.08);
-	edges = evdev_device_mm_to_units(device, &mm);
-	tp->palm.left_edge = edges.x;
+	/* Enable edge palm detection on touchpads >= 80 mm. Anything
+	   smaller probably won't need it, until we find out it does */
+	if (width >= 80.0) {
+		/* palm edges are outside of 40mm from center */
+		mm.x = max(8, width / 2 - 40);
+		edges = evdev_device_mm_to_units(device, &mm);
+		tp->palm.left_edge = edges.x;
 
-	mm.x = width - min(8, width * 0.08);
-	edges = evdev_device_mm_to_units(device, &mm);
-	tp->palm.right_edge = edges.x;
+		mm.x = width - max(8, width / 2 - 40);
+		edges = evdev_device_mm_to_units(device, &mm);
+		tp->palm.right_edge = edges.x;
+	}
 
 	if (!tp->buttons.has_topbuttons && height > 55) {
 		/* top edge is 5% of the height */
-		mm.y = height * 0.05;
+		// mm.y = height * 0.05;
+		// edges = evdev_device_mm_to_units(device, &mm);
+		// tp->palm.upper_edge = edges.y;
+
+		/* bottom edge is 10mm */
+		mm.y = height - 10;
 		edges = evdev_device_mm_to_units(device, &mm);
-		tp->palm.upper_edge = edges.y;
+		tp->palm.lower_edge = edges.y;
 	}
 }
 
@@ -3465,6 +3457,7 @@ tp_init_palmdetect(struct tp_dispatch *tp,
 	tp->palm.right_edge = INT_MAX;
 	tp->palm.left_edge = INT_MIN;
 	tp->palm.upper_edge = INT_MIN;
+	tp->palm.lower_edge = INT_MIN;
 
 	tp_init_palmdetect_arbitration(tp, device);
 
